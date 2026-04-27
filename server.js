@@ -1,4 +1,7 @@
-require('dotenv').config();
+const fs = require('fs');
+require('dotenv').config({
+  path: fs.existsSync('.env.production') ? '.env.production' : '.env',
+});
 const path     = require('path');
 const express  = require('express');
 const mongoose = require('mongoose');
