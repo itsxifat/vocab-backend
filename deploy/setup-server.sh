@@ -8,7 +8,12 @@ DOMAIN="vocab.enfinito.cloud"
 NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
 
 # ── 1. Install dependencies ───────────────────────────────────────────────────
-apt update && apt install -y nginx certbot python3-certbot-nginx docker.io docker-compose-plugin
+apt update && apt install -y nginx certbot python3-certbot-nginx
+
+# Docker — skip if already installed (conflicts with containerd on some hosts)
+if ! command -v docker &>/dev/null; then
+  apt install -y docker.io docker-compose-plugin
+fi
 
 systemctl enable --now nginx docker
 
