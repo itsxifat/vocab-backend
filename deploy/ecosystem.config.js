@@ -1,7 +1,7 @@
 module.exports = {
   apps: [{
     name:         'vocab',
-    script:       '../server.js',
+    script:       'server.js',
     cwd:          '/var/www/vocab',
     instances:    1,
     autorestart:  true,
