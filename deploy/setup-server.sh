@@ -1,24 +1,32 @@
 #!/bin/bash
-# Run this once on a fresh Ubuntu/Debian VPS to set up vocab.enfinito.cloud
-# Usage: sudo bash setup-server.sh
+# Run once on the server to set up vocab.enfinito.cloud
+# Usage: sudo bash deploy/setup-server.sh
+# Must be run from /var/www/vocab
 
 set -e
 
 DOMAIN="vocab.enfinito.cloud"
+APP_DIR="/var/www/vocab"
 NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
 
-# ── 1. Install dependencies ───────────────────────────────────────────────────
+# ── 1. Install nginx + certbot ────────────────────────────────────────────────
 apt update && apt install -y nginx certbot python3-certbot-nginx
+systemctl enable --now nginx
 
-# Docker — skip if already installed (conflicts with containerd on some hosts)
-if ! command -v docker &>/dev/null; then
-  apt install -y docker.io docker-compose-plugin
-fi
+# ── 2. Install PM2 globally ───────────────────────────────────────────────────
+npm install -g pm2
 
-systemctl enable --now nginx docker
+# ── 3. Install backend dependencies ──────────────────────────────────────────
+cd "$APP_DIR"
+npm ci --omit=dev
 
-# ── 2. Place nginx config (HTTP only first — certbot needs port 80 reachable) ─
-cat > "$NGINX_CONF" <<'EOF'
+# ── 4. Build admin panel ──────────────────────────────────────────────────────
+cd "$APP_DIR/admin"
+npm ci
+npm run build   # outputs to ../public
+
+# ── 5. Place nginx config (HTTP only first so certbot can reach port 80) ──────
+cat > "$NGINX_CONF" <<'NGINXEOF'
 server {
     listen 80;
     listen [::]:80;
@@ -36,29 +44,24 @@ server {
         client_max_body_size 10G;
     }
 }
-EOF
+NGINXEOF
 
 ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
-# ── 3. Obtain SSL certificate ─────────────────────────────────────────────────
+# ── 6. Obtain SSL certificate ─────────────────────────────────────────────────
 certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m admin@enfinito.cloud
 
-# ── 4. Replace with full HTTPS config ─────────────────────────────────────────
-cp "$(dirname "$0")/nginx.conf" "$NGINX_CONF"
+# ── 7. Replace with full HTTPS config ─────────────────────────────────────────
+cp "$APP_DIR/deploy/nginx.conf" "$NGINX_CONF"
 nginx -t && systemctl reload nginx
 
-# ── 5. Auto-renew cron (certbot installs this automatically, but verify) ──────
-systemctl enable --now certbot.timer 2>/dev/null || true
-# Manual fallback if timer not available:
-# (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet && systemctl reload nginx") | crontab -
+# ── 8. Start app with PM2 ─────────────────────────────────────────────────────
+cd "$APP_DIR"
+pm2 start deploy/ecosystem.config.js
+pm2 save
+pm2 startup | tail -1 | bash   # register PM2 to start on reboot
 
 echo ""
-echo "✓ Nginx + SSL configured for $DOMAIN"
-echo ""
-echo "Next: start the app stack"
-echo "  cd /path/to/backend/deploy"
-echo "  docker compose up -d --build"
-echo ""
-echo "Then verify:"
-echo "  curl https://$DOMAIN/health"
+echo "✓ Done. Verify with: curl https://$DOMAIN/health"
