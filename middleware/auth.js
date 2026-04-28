@@ -71,9 +71,9 @@ function requireApiKey(req, res, next) {
     return res.status(401).json({ error: 'Missing auth headers' });
   }
 
-  // Accept current bucket and the one before (handles up to ~5 min clock skew)
+  // Accept ±1 bucket (~5 min clock skew in either direction — common on mobile)
   const now = Math.floor(Date.now() / 300_000);
-  if (bucket !== now && bucket !== now - 1) {
+  if (Math.abs(bucket - now) > 1) {
     return res.status(401).json({ error: 'Token expired' });
   }
 
